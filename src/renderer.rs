@@ -28,13 +28,14 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn new() -> io::Result<Self> {
-        if !io::stdout().is_terminal() {
+        let stdout = io::stdout();
+        if !stdout.is_terminal() {
             return Err(io::Error::new(io::ErrorKind::Other, "not a TTY"));
         }
         let (width, height) = terminal::size()?;
         let size = width as usize * height as usize;
         Ok(Renderer {
-            stdout: Some(BufWriter::new(io::stdout())),
+            stdout: Some(BufWriter::new(stdout)),
             width,
             height,
             buffer: vec![Cell::default(); size],
@@ -98,7 +99,9 @@ impl Renderer {
 
     pub fn put_str(&mut self, x: u16, y: u16, s: &str, color: Color) {
         for (i, ch) in s.chars().enumerate() {
-            self.put(x + i as u16, y, ch, color);
+            let cx = x.saturating_add(i as u16);
+            if cx >= self.width { break; }
+            self.put(cx, y, ch, color);
         }
     }
 
