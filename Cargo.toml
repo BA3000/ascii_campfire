@@ -1,0 +1,13 @@
+[package]
+name = "ascii_campfire"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "campfire"
+path = "src/main.rs"
+
+[dependencies]
+crossterm = "0.29"
+rand = "0.10"
+chrono = "0.4"
