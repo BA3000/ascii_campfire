@@ -6,11 +6,10 @@ use crossterm::style::Color;
 pub struct SkyState {
     stars: Vec<(u16, u16)>,
     width: u16,
-    height: u16,
 }
 
 impl SkyState {
-    pub fn new(width: u16, height: u16, ground_y: u16) -> Self {
+    pub fn new(width: u16, ground_y: u16) -> Self {
         let mut stars = Vec::new();
         // Deterministic grid with gaps — no RNG so stars never flicker position
         let pattern = [true, false, false, true, false, true, false, false, false, true];
@@ -28,11 +27,11 @@ impl SkyState {
             }
             idx += 1;
         }
-        SkyState { stars, width, height }
+        SkyState { stars, width }
     }
 
-    pub fn resize(&mut self, width: u16, height: u16, ground_y: u16) {
-        *self = SkyState::new(width, height, ground_y);
+    pub fn resize(&mut self, width: u16, ground_y: u16) {
+        *self = SkyState::new(width, ground_y);
     }
 
     pub fn render(&self, renderer: &mut Renderer, variant: SkyVariant, ground_y: u16, frame: u64) {

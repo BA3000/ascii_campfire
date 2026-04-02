@@ -18,7 +18,7 @@ use crossterm::{
 use std::io;
 use std::time::Duration;
 
-const FRAME_DURATION: Duration = Duration::from_millis(1000 / 30);
+const FRAME_DURATION: Duration = Duration::from_millis(1000 / 15);
 
 fn ground_y(height: u16, config: &SceneConfig) -> u16 {
     (height as f32 * config.ground_y_ratio) as u16
@@ -59,7 +59,7 @@ fn run() -> io::Result<()> {
     let mut bx = base_x(w);
 
     let mut fire    = FireSystem::new(config, bx as f32, gy as f32, &mut rng);
-    let mut sky     = SkyState::new(w, h, gy);
+    let mut sky     = SkyState::new(w, gy);
     let mut ambient = AmbientState::new(&config.ambient, w, gy, &mut rng);
     let mut frame: u64 = 0;
 
@@ -100,7 +100,7 @@ fn run() -> io::Result<()> {
                     w = nw; h = nh;
                     bx = base_x(w);
                     gy = ground_y(h, config);
-                    sky.resize(w, h, gy);
+                    sky.resize(w, gy);
                 }
                 _ => {}
             }

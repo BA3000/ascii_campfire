@@ -71,10 +71,10 @@ pub struct RainDrop {
 }
 
 impl RainDrop {
-    fn new(width: u16, rng: &mut impl Rng) -> Self {
+    fn new(width: u16, height: u16, rng: &mut impl Rng) -> Self {
         RainDrop {
             x: rng.random::<f32>() * width as f32,
-            y: rng.random::<f32>() * 5.0,
+            y: rng.random::<f32>() * height as f32,
         }
     }
 
@@ -134,7 +134,7 @@ impl AmbientState {
             vec![]
         };
         let raindrops = if flags.rain {
-            (0..60).map(|_| RainDrop::new(width, rng)).collect()
+            (0..60).map(|_| RainDrop::new(width, ground_y, rng)).collect()
         } else {
             vec![]
         };
@@ -161,7 +161,7 @@ impl AmbientState {
 
         // Sync raindrop list to scene flag
         if config.ambient.rain && self.raindrops.is_empty() {
-            self.raindrops = (0..60).map(|_| RainDrop::new(width, rng)).collect();
+            self.raindrops = (0..60).map(|_| RainDrop::new(width, ground_y, rng)).collect();
         } else if !config.ambient.rain {
             self.raindrops.clear();
         }

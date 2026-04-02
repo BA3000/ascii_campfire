@@ -44,6 +44,7 @@ impl Renderer {
     }
 
     /// Headless constructor for tests — no stdout, no TTY required.
+    #[cfg(test)]
     pub fn new_headless(width: u16, height: u16) -> Self {
         let size = width as usize * height as usize;
         Renderer {
