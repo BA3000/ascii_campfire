@@ -1,5 +1,5 @@
 use crate::renderer::Renderer;
-use crate::scene::{AmbientFlags, SceneConfig};
+use crate::scene::{AmbientFlags, SceneConfig, SkyVariant};
 use crossterm::style::Color;
 use rand::{Rng, RngExt};
 
@@ -78,12 +78,15 @@ impl RainDrop {
         }
     }
 
-    pub fn update(&mut self, width: u16, height: u16) {
-        self.y += 0.8;
+    pub fn update(&mut self, width: u16, height: u16, rng: &mut impl Rng) {
+        self.y += 0.7 + rng.random::<f32>() * 0.3; // 0.7–1.0, slight variance
         self.x -= 0.1;
         if self.y >= height as f32 {
-            self.y = 0.0;
-            self.x = (self.x + 11.0) % width as f32;
+            self.y = -rng.random::<f32>() * 4.0; // stagger re-entry
+            self.x = rng.random::<f32>() * width as f32;
+        }
+        if self.x < 0.0 {
+            self.x = width as f32 - 1.0;
         }
     }
 
@@ -95,6 +98,154 @@ impl RainDrop {
             ch,
             Color::Rgb { r: 100, g: 150, b: 220 },
         );
+    }
+}
+
+// ── Airplane ──────────────────────────────────────────────────────────────
+
+const AIRPLANE_ART: &[&str] = &[
+    r"  __",
+    r" \  \     _ _",
+    r"  \**\ ___\/ \",
+    r"X*#####*+^^\_\",
+    r"  o/\  \",
+    r"     \__\",
+];
+
+pub struct Airplane {
+    x: f32,
+    y: u16,
+    speed: f32,
+    /// Countdown in frames before the next airplane spawns. `None` = one is active.
+    cooldown: u32,
+}
+
+impl Airplane {
+    fn new_idle(rng: &mut impl Rng) -> Self {
+        // Wait 300–900 frames (~20–60 s at 15 FPS) before first appearance
+        Airplane {
+            x: 0.0,
+            y: 0,
+            speed: 0.0,
+            cooldown: 300 + (rng.random::<u32>() % 600),
+        }
+    }
+
+    fn spawn(&mut self, width: u16, rng: &mut impl Rng) {
+        self.y = 1 + (rng.random::<u16>() % 3); // rows 1–3
+        self.speed = 0.3 + rng.random::<f32>() * 0.4; // 0.3–0.7 chars/frame
+        // Start just off the right edge
+        self.x = width as f32 + 2.0;
+        self.cooldown = 0;
+    }
+
+    fn is_active(&self) -> bool {
+        self.cooldown == 0
+    }
+
+    fn update(&mut self, width: u16, rng: &mut impl Rng) {
+        if self.cooldown > 0 {
+            self.cooldown -= 1;
+            if self.cooldown == 0 {
+                self.spawn(width, rng);
+            }
+            return;
+        }
+        // Fly from right to left
+        self.x -= self.speed;
+        let art_width = AIRPLANE_ART.iter().map(|r| r.len()).max().unwrap_or(0) as f32;
+        if self.x < -art_width {
+            // Off screen — go idle again
+            self.cooldown = 300 + (rng.random::<u32>() % 600);
+        }
+    }
+
+    fn render(&self, renderer: &mut Renderer) {
+        if !self.is_active() { return; }
+        let sx = self.x.round() as i32;
+        for (i, row) in AIRPLANE_ART.iter().enumerate() {
+            let y = self.y + i as u16;
+            for (j, ch) in row.chars().enumerate() {
+                let col = sx + j as i32;
+                if ch != ' ' && col >= 0 && (col as u16) < renderer.width() {
+                    renderer.put(col as u16, y, ch, Color::DarkGrey);
+                }
+            }
+        }
+    }
+}
+
+// ── Shooting star ─────────────────────────────────────────────────────────
+
+pub struct ShootingStar {
+    x: f32,
+    y: f32,
+    vx: f32,
+    vy: f32,
+    life: u16,     // frames remaining
+    cooldown: u32, // frames until next spawn
+}
+
+impl ShootingStar {
+    fn new_idle(rng: &mut impl Rng) -> Self {
+        ShootingStar {
+            x: 0.0, y: 0.0, vx: 0.0, vy: 0.0, life: 0,
+            cooldown: 200 + (rng.random::<u32>() % 400), // 13–40 s at 15 FPS
+        }
+    }
+
+    fn spawn(&mut self, width: u16, rng: &mut impl Rng) {
+        // Start in the upper quarter of the sky, random x
+        self.x = rng.random::<f32>() * width as f32;
+        self.y = rng.random::<f32>() * 4.0 + 1.0; // rows 1–5
+        // Diagonal streak: fast horizontal, moderate vertical
+        self.vx = 1.5 + rng.random::<f32>() * 1.5; // 1.5–3.0
+        if rng.random::<bool>() { self.vx = -self.vx; } // random direction
+        self.vy = 0.3 + rng.random::<f32>() * 0.4;  // 0.3–0.7 downward
+        self.life = 8 + (rng.random::<u16>() % 10);  // 8–17 frames
+        self.cooldown = 0;
+    }
+
+    fn is_active(&self) -> bool {
+        self.cooldown == 0 && self.life > 0
+    }
+
+    fn update(&mut self, width: u16, rng: &mut impl Rng) {
+        if self.cooldown > 0 {
+            self.cooldown -= 1;
+            if self.cooldown == 0 {
+                self.spawn(width, rng);
+            }
+            return;
+        }
+        if self.life == 0 { return; }
+        self.x += self.vx;
+        self.y += self.vy;
+        self.life -= 1;
+        if self.life == 0 {
+            self.cooldown = 200 + (rng.random::<u32>() % 400);
+        }
+    }
+
+    fn render(&self, renderer: &mut Renderer) {
+        if !self.is_active() { return; }
+        // Draw a short tail behind the head
+        let tail_len = 3u8;
+        for i in 0..=tail_len {
+            let tx = self.x - self.vx * i as f32 * 0.5;
+            let ty = self.y - self.vy * i as f32 * 0.5;
+            let col = tx.round() as i32;
+            let row = ty.round() as i32;
+            if col < 0 || row < 0 { continue; }
+            let (col, row) = (col as u16, row as u16);
+            if col >= renderer.width() { continue; }
+            let (ch, color) = match i {
+                0 => ('*', Color::White),
+                1 => ('-', Color::Rgb { r: 200, g: 200, b: 255 }),
+                _ => ('.', Color::DarkGrey),
+            };
+            renderer.put(col, row, ch, color);
+        }
     }
 }
 
@@ -124,6 +275,8 @@ fn render_figures(renderer: &mut Renderer, base_x: u16, ground_y: u16) {
 pub struct AmbientState {
     pub fireflies: Vec<Firefly>,
     pub raindrops: Vec<RainDrop>,
+    airplane: Airplane,
+    shooting_star: ShootingStar,
 }
 
 impl AmbientState {
@@ -138,7 +291,9 @@ impl AmbientState {
         } else {
             vec![]
         };
-        AmbientState { fireflies, raindrops }
+        let airplane = Airplane::new_idle(rng);
+        let shooting_star = ShootingStar::new_idle(rng);
+        AmbientState { fireflies, raindrops, airplane, shooting_star }
     }
 
     pub fn update(
@@ -166,7 +321,17 @@ impl AmbientState {
             self.raindrops.clear();
         }
         for drop in &mut self.raindrops {
-            drop.update(width, height);
+            drop.update(width, height, rng);
+        }
+
+        // Airplane — only in outdoor scenes
+        if config.sky != SkyVariant::Indoor {
+            self.airplane.update(width, rng);
+        }
+
+        // Shooting star — only at night
+        if config.sky == SkyVariant::Night {
+            self.shooting_star.update(width, rng);
         }
     }
 
@@ -176,6 +341,12 @@ impl AmbientState {
         }
         for drop in &self.raindrops {
             drop.render(renderer);
+        }
+        if config.sky != SkyVariant::Indoor {
+            self.airplane.render(renderer);
+        }
+        if config.sky == SkyVariant::Night {
+            self.shooting_star.render(renderer);
         }
         if config.ambient.figures {
             render_figures(renderer, base_x, ground_y);
@@ -196,7 +367,7 @@ mod tests {
     #[test]
     fn raindrop_falls_downward() {
         let mut drop = RainDrop { x: 10.0, y: 5.0 };
-        drop.update(80, 40);
+        drop.update(80, 40, &mut rand::rng());
         assert!(drop.y > 5.0, "raindrop y should increase (fall)");
     }
 }
