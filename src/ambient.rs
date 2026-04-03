@@ -249,6 +249,72 @@ impl ShootingStar {
     }
 }
 
+// ── Sleeping cat ──────────────────────────────────────────────────────────
+
+// Two frames: inhale / exhale — the belly rises and falls.
+const CAT_INHALE: &[&str] = &[
+    r" /\_/\ ",
+    r"( -.- )",
+    r" (> <)_/",
+    r"  ~~~ ",
+];
+const CAT_EXHALE: &[&str] = &[
+    r" /\_/\ ",
+    r"( -.- )",
+    r" ()_()_/",
+    r"  ~~~ ",
+];
+
+// "Zzz" bubble offsets from top-left of cat art
+const ZZZ_DX: i32 = 8;
+const ZZZ_DY: i32 = -1;
+
+pub struct SleepingCat {
+    breath_phase: f32, // 0..TAU, controls inhale/exhale
+    snore_frame: u64,  // tracks Zzz animation
+}
+
+impl SleepingCat {
+    fn new() -> Self {
+        SleepingCat { breath_phase: 0.0, snore_frame: 0 }
+    }
+
+    fn update(&mut self) {
+        self.breath_phase += 0.08; // full cycle ≈ 79 frames ≈ 5.3 s
+        if self.breath_phase > std::f32::consts::TAU {
+            self.breath_phase -= std::f32::consts::TAU;
+        }
+        self.snore_frame = self.snore_frame.wrapping_add(1);
+    }
+
+    fn render(&self, renderer: &mut Renderer, base_x: u16, ground_y: u16) {
+        let inhale = self.breath_phase.sin() > 0.0;
+        let art = if inhale { CAT_INHALE } else { CAT_EXHALE };
+
+        // Place cat on the ground to the right of the fire base
+        let cx = base_x + 8;
+        let base_bottom = ground_y + 3; // base_art starts at gy+1, 2 lines tall
+        let cy = base_bottom.saturating_sub(art.len() as u16);
+        for (i, row) in art.iter().enumerate() {
+            renderer.put_str(cx, cy + i as u16, row, Color::Rgb { r: 180, g: 140, b: 100 });
+        }
+
+        // Zzz bubble — cycles through "z", "zZ", "zZz"
+        let zzz_x = cx as i32 + ZZZ_DX;
+        let zzz_y = cy as i32 + ZZZ_DY;
+        if zzz_x >= 0 && zzz_y >= 0 {
+            let phase = (self.snore_frame / 20) % 4; // change every ~1.3 s
+            let txt = match phase {
+                0 => "z",
+                1 => "zZ",
+                2 => "zZz",
+                _ => "",   // brief pause
+            };
+            renderer.put_str(zzz_x as u16, zzz_y as u16, txt, Color::DarkGrey);
+        }
+    }
+}
+
 // ── Seated figures (static ASCII silhouettes) ──────────────────────────────
 
 const FIGURE_L: &[&str] = &[" o ", "/|\\", "/ \\"];
@@ -277,6 +343,7 @@ pub struct AmbientState {
     pub raindrops: Vec<RainDrop>,
     airplane: Airplane,
     shooting_star: ShootingStar,
+    cat: Option<SleepingCat>,
 }
 
 impl AmbientState {
@@ -293,7 +360,8 @@ impl AmbientState {
         };
         let airplane = Airplane::new_idle(rng);
         let shooting_star = ShootingStar::new_idle(rng);
-        AmbientState { fireflies, raindrops, airplane, shooting_star }
+        let cat = if flags.cat { Some(SleepingCat::new()) } else { None };
+        AmbientState { fireflies, raindrops, airplane, shooting_star, cat }
     }
 
     pub fn update(
@@ -333,6 +401,14 @@ impl AmbientState {
         if config.sky == SkyVariant::Night {
             self.shooting_star.update(width, rng);
         }
+
+        // Sleeping cat
+        if config.ambient.cat {
+            if self.cat.is_none() { self.cat = Some(SleepingCat::new()); }
+            self.cat.as_mut().unwrap().update();
+        } else {
+            self.cat = None;
+        }
     }
 
     pub fn render(&self, renderer: &mut Renderer, config: &SceneConfig, base_x: u16, ground_y: u16) {
@@ -347,6 +423,9 @@ impl AmbientState {
         }
         if config.sky == SkyVariant::Night {
             self.shooting_star.render(renderer);
+        }
+        if let Some(cat) = &self.cat {
+            cat.render(renderer, base_x, ground_y);
         }
         if config.ambient.figures {
             render_figures(renderer, base_x, ground_y);

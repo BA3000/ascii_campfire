@@ -2,7 +2,8 @@ use crossterm::{
     cursor,
     execute, queue,
     style::{Color, Print, ResetColor, SetForegroundColor},
-    terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen,
+               BeginSynchronizedUpdate, EndSynchronizedUpdate},
 };
 use std::io::{self, BufWriter, IsTerminal, Stdout, Write};
 
@@ -108,8 +109,14 @@ impl Renderer {
 
     pub fn flush(&mut self) -> io::Result<()> {
         let Some(ref mut out) = self.stdout else { return Ok(()); };
+        queue!(out, BeginSynchronizedUpdate)?;
         let mut current_color = Color::Reset;
-        let mut last_pos: Option<(u16, u16)> = None;
+
+        // Batch consecutive same-color characters into a single Print call
+        // to minimize ANSI escape sequences and reduce tearing.
+        let mut run = String::new();
+        let mut run_start: Option<(u16, u16)> = None;
+        let mut last_end: Option<(u16, u16)> = None; // (x+1, y) after last written char
 
         for y in 0..self.height {
             for x in 0..self.width {
@@ -117,24 +124,72 @@ impl Renderer {
                 if idx >= self.buffer.len() { continue; }
                 let cell = self.buffer[idx];
                 let prev = self.prev_buffer[idx];
-                if cell == prev { continue; }
-
-                let expected = last_pos.map(|(lx, ly)| (lx + 1, ly));
-                if expected != Some((x, y)) {
-                    queue!(out, cursor::MoveTo(x, y))?;
+                if cell == prev {
+                    // Flush any pending run
+                    if !run.is_empty() {
+                        let (sx, sy) = run_start.unwrap();
+                        if last_end != Some((sx, sy)) {
+                            queue!(out, cursor::MoveTo(sx, sy))?;
+                        }
+                        queue!(out, Print(&run))?;
+                        last_end = Some((sx + run.len() as u16, sy));
+                        run.clear();
+                        run_start = None;
+                    }
+                    continue;
                 }
+
+                // Color change — flush current run first
                 if cell.color != current_color {
+                    if !run.is_empty() {
+                        let (sx, sy) = run_start.unwrap();
+                        if last_end != Some((sx, sy)) {
+                            queue!(out, cursor::MoveTo(sx, sy))?;
+                        }
+                        queue!(out, Print(&run))?;
+                        last_end = Some((sx + run.len() as u16, sy));
+                        run.clear();
+                        run_start = None;
+                    }
                     queue!(out, SetForegroundColor(cell.color))?;
                     current_color = cell.color;
                 }
-                queue!(out, Print(cell.ch))?;
-                last_pos = Some((x, y));
+
+                // Position discontinuity — flush and start new run
+                if let Some((sx, sy)) = run_start {
+                    let expected_x = sx + run.len() as u16;
+                    if y != sy || x != expected_x {
+                        if last_end != Some((sx, sy)) {
+                            queue!(out, cursor::MoveTo(sx, sy))?;
+                        }
+                        queue!(out, Print(&run))?;
+                        last_end = Some((sx + run.len() as u16, sy));
+                        run.clear();
+                        run_start = None;
+                    }
+                }
+
+                if run_start.is_none() {
+                    run_start = Some((x, y));
+                }
+                run.push(cell.ch);
+            }
+        }
+
+        // Flush any trailing run
+        if !run.is_empty() {
+            if let Some((sx, sy)) = run_start {
+                if last_end != Some((sx, sy)) {
+                    queue!(out, cursor::MoveTo(sx, sy))?;
+                }
+                queue!(out, Print(&run))?;
             }
         }
 
         if current_color != Color::Reset {
             queue!(out, ResetColor)?;
         }
+        queue!(out, EndSynchronizedUpdate)?;
         out.flush()?;
         self.prev_buffer.copy_from_slice(&self.buffer);
         Ok(())
