@@ -2,6 +2,93 @@ use crate::renderer::Renderer;
 use crate::scene::SkyVariant;
 use crossterm::style::Color;
 
+/// ASCII art for 8 moon phases. Each phase is 6 lines tall, max 11 chars wide.
+const MOON_ART: [[&str; 6]; 8] = [
+    // 0: New Moon
+    [
+        "   _..._",
+        " .:::::::.",
+        ":::::::::::",
+        ":::::::::::",
+        "`:::::::::'",
+        "  `':::''",
+    ],
+    // 1: Waxing Crescent
+    [
+        "   _..._",
+        " .::::. `.",
+        ":::::::.  :",
+        "::::::::  :",
+        "`::::::' .'",
+        "  `'::'-'",
+    ],
+    // 2: First Quarter
+    [
+        "   _..._",
+        " .::::  `.",
+        "::::::    :",
+        "::::::    :",
+        "`:::::   .'",
+        "  `'::.-'",
+    ],
+    // 3: Waxing Gibbous
+    [
+        "   _..._",
+        " .::'   `.",
+        ":::       :",
+        ":::       :",
+        "`::.     .'",
+        "  `':..-'",
+    ],
+    // 4: Full Moon
+    [
+        "   _..._",
+        " .'     `.",
+        ":         :",
+        ":         :",
+        "`.       .'",
+        "  `-...-'",
+    ],
+    // 5: Waning Gibbous
+    [
+        "   _..._",
+        " .'   `::.",
+        ":       :::",
+        ":       :::",
+        "`.     .::'",
+        "  `-..:''",
+    ],
+    // 6: Last Quarter
+    [
+        "   _..._",
+        " .'  ::::",
+        ":    ::::::",
+        ":    ::::::",
+        "`.   :::::'",
+        "  `-.::''",
+    ],
+    // 7: Waning Crescent
+    [
+        "   _..._",
+        " .' .::::",
+        ":  ::::::::",
+        ":  ::::::::",
+        "`. '::::::'",
+        "  `-.::''",
+    ],
+];
+
+/// Moon phase index (0–7) based on current local time.
+fn moon_phase_index() -> usize {
+    let now_ts = chrono::Local::now().timestamp() as f64;
+    // Reference new moon: 2000-01-06 18:14 UTC (unix timestamp)
+    let ref_new_moon = 947_182_440.0_f64;
+    let synodic_month = 29.530_59 * 86_400.0; // ~29.53 days in seconds
+    let elapsed = now_ts - ref_new_moon;
+    let phase = ((elapsed % synodic_month) + synodic_month) % synodic_month / synodic_month;
+    ((phase * 8.0).floor() as usize) % 8
+}
+
 /// Pre-generated star positions — stable across frames, rebuilt only on resize.
 pub struct SkyState {
     stars: Vec<(u16, u16)>,
@@ -50,11 +137,13 @@ impl SkyState {
             let ch = if dim { '.' } else { '*' };
             renderer.put(x, y, ch, Color::White);
         }
-        // Moon: top-right
-        let mx = self.width.saturating_sub(6);
-        renderer.put(mx,     1, '(', Color::Yellow);
-        renderer.put(mx + 1, 1, 'C', Color::Yellow);
-        renderer.put(mx + 2, 1, ')', Color::Yellow);
+        // Moon: top-right, phase based on current time
+        let phase = moon_phase_index();
+        let art = &MOON_ART[phase];
+        let mx = self.width.saturating_sub(13);
+        for (i, line) in art.iter().enumerate() {
+            renderer.put_str(mx, 1 + i as u16, line, Color::Yellow);
+        }
         // Ground line
         for x in 0..self.width {
             renderer.put(x, ground_y, '_', Color::DarkGrey);
