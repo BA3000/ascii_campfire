@@ -418,9 +418,6 @@ impl AmbientState {
         for drop in &self.raindrops {
             drop.render(renderer);
         }
-        if config.sky != SkyVariant::Indoor {
-            self.airplane.render(renderer);
-        }
         if config.sky == SkyVariant::Night {
             self.shooting_star.render(renderer);
         }
@@ -429,6 +426,13 @@ impl AmbientState {
         }
         if config.ambient.figures {
             render_figures(renderer, base_x, ground_y);
+        }
+    }
+
+    /// Render airplane separately so it draws on top of overlays (clock, etc.)
+    pub fn render_airplane(&self, renderer: &mut Renderer, config: &SceneConfig) {
+        if config.sky != SkyVariant::Indoor {
+            self.airplane.render(renderer);
         }
     }
 }

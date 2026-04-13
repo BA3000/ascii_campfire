@@ -80,6 +80,7 @@ fn run() -> io::Result<()> {
         render_base(&mut renderer, config, bx, gy);
         ambient.render(&mut renderer, config, bx, gy);
         overlay::render(&mut renderer, config.overlay, &mut badapple);
+        ambient.render_airplane(&mut renderer, config);
         render_hud(&mut renderer, config, active_idx);
         renderer.flush()?;
 
